@@ -23,6 +23,7 @@
 #include "ltable.h"
 #include "lzio.h"
 
+#include <stdio.h>
 
 
 #define next(ls) (ls->current = zgetc(ls->z))
@@ -37,7 +38,9 @@ static const char *const luaX_tokens [] = {
     "and", "break", "do", "else", "elseif",
     "end", "false", "for", "function", "goto", "if",
     "in", "local", "nil", "not", "or", "repeat",
-    "return", "then", "true", "until", "while",
+    "return", "then", "true", "until",
+    "def",
+    "while",
     "..", "...", "==", ">=", "<=", "~=", "::", "<eof>",
     "<number>", "<name>", "<string>"
 };
@@ -80,8 +83,9 @@ const char *luaX_token2str (LexState *ls, int token) {
   }
   else {
     const char *s = luaX_tokens[token - FIRST_RESERVED];
-    if (token < TK_EOS)  /* fixed format (symbols and reserved words)? */
+    if (token < TK_EOS) {  /* fixed format (symbols and reserved words)? */
       return luaO_pushfstring(ls->L, LUA_QS, s);
+    }
     else  /* names, strings, and numerals */
       return s;
   }
@@ -494,8 +498,12 @@ static int llex (LexState *ls, SemInfo *seminfo) {
           ts = luaX_newstring(ls, luaZ_buffer(ls->buff),
                                   luaZ_bufflen(ls->buff));
           seminfo->ts = ts;
-          if (isreserved(ts))  /* reserved word? */
-            return ts->tsv.extra - 1 + FIRST_RESERVED;
+          if (isreserved(ts)) { /* reserved word? */
+            int tk = ts->tsv.extra - 1 + FIRST_RESERVED;
+            if (tk == TK_DEF)
+              tk = TK_FUNCTION;
+            return tk;
+          }
           else {
             return TK_NAME;
           }
