@@ -23,7 +23,6 @@
 #include "ltable.h"
 #include "lzio.h"
 
-#include <stdio.h>
 
 
 #define next(ls) (ls->current = zgetc(ls->z))
@@ -39,7 +38,7 @@ static const char *const luaX_tokens [] = {
     "end", "false", "for", "function", "goto", "if",
     "in", "local", "nil", "not", "or", "repeat",
     "return", "then", "true", "until",
-    "def",
+    "def", "elif",
     "while",
     "..", "...", "==", ">=", "<=", "~=", "::", "<eof>",
     "<number>", "<name>", "<string>"
@@ -501,7 +500,10 @@ static int llex (LexState *ls, SemInfo *seminfo) {
           if (isreserved(ts)) { /* reserved word? */
             int tk = ts->tsv.extra - 1 + FIRST_RESERVED;
             if (tk == TK_DEF)
-              tk = TK_FUNCTION;
+              return TK_FUNCTION;
+            else if (tk == TK_ELIF) {
+              return TK_ELSEIF;
+            }
             return tk;
           }
           else {

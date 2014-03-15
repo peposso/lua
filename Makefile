@@ -57,6 +57,7 @@ $(PLATS) clean:
 test:	dummy
 	src/lua -v
 	src/lua test/def.lua
+	src/lua test/elif.lua
 
 install: dummy
 	cd src && $(MKDIR) $(INSTALL_BIN) $(INSTALL_INC) $(INSTALL_LIB) $(INSTALL_MAN) $(INSTALL_LMOD) $(INSTALL_CMOD)
