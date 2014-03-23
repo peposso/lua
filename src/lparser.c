@@ -55,6 +55,8 @@ typedef struct BlockCnt {
 */
 static void statement (LexState *ls);
 static void expr (LexState *ls, expdesc *v);
+static void retstat (LexState *ls);
+static void retstatexp (LexState *ls, expdesc *e);
 
 
 static void anchor_token (LexState *ls) {
@@ -294,8 +296,7 @@ static int singlevaraux (FuncState *fs, TString *n, expdesc *var, int base) {
 }
 
 
-static void singlevar (LexState *ls, expdesc *var) {
-  TString *varname = str_checkname(ls);
+static void singlevarts (LexState *ls, expdesc *var, TString *varname) {
   FuncState *fs = ls->fs;
   if (singlevaraux(fs, varname, var, 1) == VVOID) {  /* global name? */
     expdesc key;
@@ -304,6 +305,12 @@ static void singlevar (LexState *ls, expdesc *var) {
     codestring(ls, &key, varname);  /* key is variable name */
     luaK_indexed(fs, var, &key);  /* env[varname] */
   }
+}
+
+
+static void singlevar (LexState *ls, expdesc *var) {
+  TString *varname = str_checkname(ls);
+  singlevarts(ls, var, varname);
 }
 
 
@@ -539,6 +546,7 @@ static void open_func (LexState *ls, FuncState *fs, BlockCnt *bl) {
   fs->nups = 0;
   fs->nlocvars = 0;
   fs->nactvar = 0;
+  fs->arrow = 0;
   fs->firstlocal = ls->dyd->actvar.n;
   fs->bl = NULL;
   f = fs->f;
@@ -807,6 +815,75 @@ static void body (LexState *ls, expdesc *e, int ismethod, int line) {
 }
 
 
+static void arrowbody (LexState *ls, expdesc *e, int isparlist, TString* varname) {
+  /* arrowbody -> [TK_NAME | ( parlist )] TK_ARROW block END */
+  FuncState new_fs;
+  BlockCnt bl;
+  new_fs.f = addprototype(ls);
+  int line = ls->linenumber;
+  new_fs.f->linedefined = line;
+  open_func(ls, &new_fs, &bl);
+  if (varname != NULL) {
+    new_localvar(ls, varname);
+    adjustlocalvars(ls, 1);
+    new_fs.f->numparams = cast_byte(new_fs.nactvar);
+    luaK_reserveregs(&new_fs, new_fs.nactvar);
+  }
+  if (isparlist == 1) {
+    parlist(ls);
+    checknext(ls, ')');
+    checknext(ls, TK_ARROW);
+  }
+  else if (ls->t.token == TK_ARROW) {
+    luaX_next(ls);
+  }
+  else if (ls->t.token == TK_NAME) {
+    TString* ts = str_checkname(ls);
+    new_localvar(ls, ts);
+    adjustlocalvars(ls, 1);
+    new_fs.f->numparams = cast_byte(new_fs.nactvar);
+    luaK_reserveregs(&new_fs, new_fs.nactvar);
+    checknext(ls, TK_ARROW);
+  }
+  else if (ls->t.token == TK_DOTS) {
+    luaX_next(ls);
+    new_fs.f->is_vararg = 1;
+    new_fs.f->numparams = cast_byte(new_fs.nactvar);
+    luaK_reserveregs(&new_fs, new_fs.nactvar);
+    checknext(ls, TK_ARROW);
+  }
+  new_fs.arrow = 1;
+  int singleline = 0;
+  if (ls->lastline == ls->linenumber)
+    singleline = 1;
+  int end = 0;
+  while (!end) {
+    switch (ls->t.token) {
+      case TK_RETURN:
+        statement(ls);
+      case TK_END: case TK_EOS:
+      case ')': case '}': case ',':
+        end = 1;
+        break;
+      default:
+        statement(ls);
+        break;
+    }
+    if (!end && singleline) {
+      if (ls->linenumber != line) {
+        end = 2;
+        break;
+      }
+    }
+  }
+  new_fs.f->lastlinedefined = ls->linenumber;
+  if (end != 2 && ls->t.token == TK_END)
+    luaX_next(ls);
+  codeclosure(ls, e);
+  close_func(ls);
+}
+
+
 static int explist (LexState *ls, expdesc *v) {
   /* explist -> expr { `,' expr } */
   int n = 1;  /* at least one expression */
@@ -874,25 +951,52 @@ static void funcargs (LexState *ls, expdesc *f, int line) {
 */
 
 
-static void primaryexp (LexState *ls, expdesc *v) {
+static int primaryexp (LexState *ls, expdesc *v) {
   /* primaryexp -> NAME | '(' expr ')' */
   switch (ls->t.token) {
     case '(': {
       int line = ls->linenumber;
       luaX_next(ls);
+      if(ls->t.token == TK_NAME) {
+        int ahead = luaX_lookahead(ls);
+        if (ahead == ',') {
+          arrowbody(ls, v, 1, NULL);
+          return 1;
+        }
+        else if (ahead == ')') {
+          // singlevar ?
+          TString* varname = str_checkname(ls);
+          check_match(ls, ')', '(', line);
+          if (ls->t.token == TK_ARROW) {
+            arrowbody(ls, v, 0, varname);
+            return 1;
+          }
+          else {
+            singlevarts(ls, v, varname);
+            luaK_dischargevars(ls->fs, v);
+            return 0;
+          }
+        }
+      }
+      else if(ls->t.token == TK_DOTS) {
+        arrowbody(ls, v, 1, NULL);
+        return 1;
+      }
+      // '(' expr ')'
       expr(ls, v);
       check_match(ls, ')', '(', line);
       luaK_dischargevars(ls->fs, v);
-      return;
+      return 0;
     }
     case TK_NAME: {
       singlevar(ls, v);
-      return;
+      return 0;
     }
     default: {
       luaX_syntaxerror(ls, "unexpected symbol");
     }
   }
+  return 1;
 }
 
 
@@ -901,7 +1005,7 @@ static void suffixedexp (LexState *ls, expdesc *v) {
        primaryexp { '.' NAME | '[' exp ']' | ':' NAME funcargs | funcargs } */
   FuncState *fs = ls->fs;
   int line = ls->linenumber;
-  primaryexp(ls, v);
+  if(primaryexp(ls, v) == 1) return;
   for (;;) {
     switch (ls->t.token) {
       case '.': {  /* fieldsel */
@@ -960,6 +1064,10 @@ static void simpleexp (LexState *ls, expdesc *v) {
       break;
     }
     case TK_DOTS: {  /* vararg */
+      if (luaX_lookahead(ls) == TK_ARROW) {
+        arrowbody(ls, v, 0, NULL);
+        return;
+      }
       FuncState *fs = ls->fs;
       check_condition(ls, fs->f->is_vararg,
                       "cannot use " LUA_QL("...") " outside a vararg function");
@@ -973,6 +1081,18 @@ static void simpleexp (LexState *ls, expdesc *v) {
     case TK_FUNCTION: {
       luaX_next(ls);
       body(ls, v, 0, ls->linenumber);
+      return;
+    }
+    case TK_ARROW: {
+      arrowbody(ls, v, 0, NULL);
+      return;
+    }
+    case TK_NAME: {
+      if (luaX_lookahead(ls) == TK_ARROW) {
+        arrowbody(ls, v, 0, NULL);
+        return;
+      }
+      suffixedexp(ls, v);
       return;
     }
     default: {
@@ -1481,14 +1601,27 @@ static void exprstat (LexState *ls) {
   /* stat -> func | assignment */
   FuncState *fs = ls->fs;
   struct LHS_assign v;
-  suffixedexp(ls, &v.v);
-  if (ls->t.token == '=' || ls->t.token == ',') { /* stat -> assignment ? */
-    v.prev = NULL;
-    assignment(ls, &v, 1);
+  if (fs->arrow == 1) { /* stat in arrowbody */
+    expr(ls, &v.v);
+    if (ls->t.token == '=') { /* stat -> assignment */
+      v.prev = NULL;
+      assignment(ls, &v, 1);
+    }
+    else {  /* stat -> func */
+      retstatexp(ls, &v.v);
+      fs->arrow = 2;
+    }
   }
-  else {  /* stat -> func */
-    check_condition(ls, v.v.k == VCALL, "syntax error");
-    SETARG_C(getcode(fs, &v.v), 1);  /* call statement uses no results */
+  else {
+    suffixedexp(ls, &v.v);
+    if (ls->t.token == '=' || ls->t.token == ',') { /* stat -> assignment ? */
+      v.prev = NULL;
+      assignment(ls, &v, 1);
+    }
+    else {  /* stat -> func */
+      check_condition(ls, v.v.k == VCALL, "syntax error");
+      SETARG_C(getcode(fs, &v.v), 1);  /* call statement uses no results */
+    }
   }
 }
 
@@ -1522,6 +1655,16 @@ static void retstat (LexState *ls) {
     }
   }
   luaK_ret(fs, first, nret);
+  testnext(ls, ';');  /* skip optional semicolon */
+}
+
+
+static void retstatexp (LexState *ls, expdesc *e) {
+  /* stat -> RETURN [explist] [';'] */
+  FuncState *fs = ls->fs;
+  int first;  /* registers with returned values */
+  first = luaK_exp2anyreg(fs, e);
+  luaK_ret(fs, first, 1);
   testnext(ls, ';');  /* skip optional semicolon */
 }
 

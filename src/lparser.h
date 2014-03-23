@@ -109,6 +109,7 @@ typedef struct FuncState {
   lu_byte nactvar;  /* number of active local variables */
   lu_byte nups;  /* number of upvalues */
   lu_byte freereg;  /* first free register */
+  lu_byte arrow;  /* is arrow function */
 } FuncState;
 
 
