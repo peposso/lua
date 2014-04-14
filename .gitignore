@@ -4,4 +4,3 @@ _*
 *.a
 src/lua
 src/luac
-src/luaconf.h

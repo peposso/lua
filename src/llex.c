@@ -41,6 +41,7 @@ static const char *const luaX_tokens [] = {
     "def", "elif",
     "while",
     "..", "...", "==", ">=", "<=", "~=", "::",
+    ":\n",
     "=>",
     "<eof>",
     "<number>", "<name>", "<string>"
@@ -173,6 +174,7 @@ void luaX_setinput (lua_State *L, LexState *ls, ZIO *z, TString *source,
   ls->lastline = 1;
   ls->source = source;
   ls->envn = luaS_new(L, LUA_ENV);  /* create env name */
+  ls->indent = -1;
   luaS_fix(ls->envn);  /* never collect this name */
   luaZ_resizebuffer(ls->L, ls->buff, LUA_MINBUFFER);  /* initialize buffer */
 }
@@ -406,9 +408,29 @@ static void read_string (LexState *ls, int del, SemInfo *seminfo) {
 static int llex (LexState *ls, SemInfo *seminfo) {
   luaZ_resetbuffer(ls->buff);
   for (;;) {
+    if (ls->indent == -1) {
+      ls->indent = 0;
+      for (;;) {
+        switch (ls->current) {
+          case '\n': case '\r': {  /* line breaks */
+            inclinenumber(ls);
+            ls->indent = 0;
+            continue;
+          }
+          case ' ': case '\f': case '\t': case '\v': {  /* spaces */
+            next(ls);
+            ls->indent++;
+            continue;
+          }
+          default: break;
+        }
+        break;
+      }
+    }
     switch (ls->current) {
       case '\n': case '\r': {  /* line breaks */
         inclinenumber(ls);
+        ls->indent = -1;
         break;
       }
       case ' ': case '\f': case '\t': case '\v': {  /* spaces */
@@ -432,6 +454,7 @@ static int llex (LexState *ls, SemInfo *seminfo) {
         /* else short comment */
         while (!currIsNewline(ls) && ls->current != EOZ)
           next(ls);  /* skip until end of line (or end of file) */
+        ls->indent = -1;
         break;
       }
       case '[': {  /* long string or simply '[' */
@@ -468,8 +491,25 @@ static int llex (LexState *ls, SemInfo *seminfo) {
       }
       case ':': {
         next(ls);
-        if (ls->current != ':') return ':';
-        else { next(ls); return TK_DBCOLON; }
+        if (ls->current == ':') {
+          next(ls); return TK_DBCOLON;
+        }
+        for (;;) {
+          switch (ls->current) {
+            case '\n': case '\r': {  /* line breaks */
+              inclinenumber(ls);
+              ls->indent = -1;
+              return TK_INDENTBLOCK;
+            }
+            case ' ': case '\f': case '\t': case '\v': {  /* spaces */
+              next(ls);
+              continue;
+            }
+            default: break;
+          }
+          break;
+        }
+        return ':';
       }
       case '"': case '\'': {  /* short literal strings */
         read_string(ls, ls->current, seminfo);

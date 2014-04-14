@@ -30,6 +30,7 @@ enum RESERVED {
   TK_WHILE,
   /* other terminal symbols */
   TK_CONCAT, TK_DOTS, TK_EQ, TK_GE, TK_LE, TK_NE, TK_DBCOLON,
+  TK_INDENTBLOCK,
   TK_ARROW,
   TK_EOS,
   TK_NUMBER, TK_NAME, TK_STRING
@@ -67,6 +68,7 @@ typedef struct LexState {
   TString *source;  /* current source name */
   TString *envn;  /* environment variable name */
   char decpoint;  /* locale decimal point */
+  int indent;  /* indent space count */
 } LexState;
 
 

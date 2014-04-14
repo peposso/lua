@@ -56,6 +56,7 @@ $(PLATS) clean:
 
 test:	dummy
 	src/lua -v
+	src/lua test/indentblock.lua
 	src/lua test/arrow.lua
 	src/lua test/def.lua
 	src/lua test/elif.lua
