@@ -469,10 +469,18 @@ static int llex (LexState *ls, SemInfo *seminfo) {
       case '=': {
         next(ls);
         if (ls->current == '=') {
-          next(ls); return TK_EQ;
+          next(ls);
+          if (ls->current == '>') {
+            ls->current = TK_ARROW;
+            return '=';
+          } else return TK_EQ;
         } else if (ls->current == '>') {
           next(ls); return TK_ARROW;
         } else return '=';
+      }
+      case TK_ARROW: {
+        next(ls);
+        return TK_ARROW;
       }
       case '<': {
         next(ls);

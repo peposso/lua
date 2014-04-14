@@ -826,6 +826,7 @@ static void arrowbody (LexState *ls, expdesc *e, int isparlist, TString* varname
   BlockCnt bl;
   new_fs.f = addprototype(ls);
   int line = ls->linenumber;
+  int indent = ls->indent;
   new_fs.f->linedefined = line;
   open_func(ls, &new_fs, &bl);
   if (varname != NULL) {
@@ -863,6 +864,15 @@ static void arrowbody (LexState *ls, expdesc *e, int isparlist, TString* varname
     singleline = 1;
   int end = 0;
   while (!end) {
+    if (!singleline) {
+      if (ls->indent <= indent &&
+        ls->t.token != TK_END &&
+        ls->t.token != TK_EOS)
+      {
+        end = 2;
+        break;
+      }
+    }
     switch (ls->t.token) {
       case TK_RETURN:
         statement(ls);

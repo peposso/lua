@@ -92,3 +92,39 @@ ok, msg = load([[
 assert(ok, msg)
 print(ok()..' -- deep else')
 
+-----------------------------
+print('----------------------')
+
+ok, msg = load([[
+  local f = =>
+    "ok"
+  return f()
+]])
+assert(ok, msg)
+print(ok()..' -- arrow func indent')
+
+ok, msg = load([[
+  local f = =>
+    => =>
+      => => "ok"
+  return f()()()()()
+]])
+assert(ok, msg)
+print(ok()..' -- arrow func deep indent')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

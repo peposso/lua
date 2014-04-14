@@ -112,3 +112,11 @@ assert(ok, msg)
 print(ok()..' -- primaryexp test')
 
 
+ok, msg = load([[
+  local f ==>=>"ok"
+  return f()()
+]])
+assert(ok, msg)
+print(ok()..' -- no space')
+
+
